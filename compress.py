@@ -24,7 +24,7 @@ if not binary_path.is_file():
 dtype = np.uint16
 num_channels = 384 
 
-shard_size = 1_000_000
+shard_size = 10_000_000
 chunk_size = 100_000
 if (shard_size % chunk_size) != 0:
     raise ValueError("`chunk_size` must divide `shard_size`")
