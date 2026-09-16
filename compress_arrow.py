@@ -42,8 +42,8 @@ schema = pa.schema(fields)
 # 3. Stream chunks directly to the Arrow IPC file
 with (pa.OSFile(str(arrow_path), "wb") as sink,
     ipc.new_file(sink, schema) as writer):
-        for start_idx in range(0, num_channels, chunk_size):
-            end_idx = min(start_idx + chunk_size, num_channels)
+        for start_idx in range(0, time_samples, chunk_size):
+            end_idx = min(start_idx + chunk_size, time_samples)
             
             # Zero-copy row slice from disk
             chunk = raw_data[start_idx:end_idx]
