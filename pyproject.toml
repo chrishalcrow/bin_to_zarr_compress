@@ -1,10 +1,16 @@
 [project]
-name = "bin_to_zarr_compress"
+name = "aeon_compress_binary_files"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
-    "pyarrow>=25.0.1",
-    "zarr>3",
+    "aeon-mecha",
+    "numpy>=2.5.4",
+    "pandas>=3.0.6",
+    "pyarrow>=26.0.0",
+    "spikeinterface>=0.105.1",
 ]
+
+[tool.uv.sources]
+aeon-mecha = { path = "../aeon_mecha" }
