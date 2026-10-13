@@ -1,7 +1,7 @@
 [project]
 name = "aeon_binary_to_arrow"
 version = "0.1.0"
-description = "Add your description here"
+description = "Converts ephys, clock and hubclock binary files from the bonsai-onix system into compressed arrow files. These generated files should match the output from the bonsai-onix system with the arrow format is selected."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
