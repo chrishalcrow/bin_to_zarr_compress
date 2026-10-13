@@ -1,9 +1,11 @@
 import argparse
 import os
 from pathlib import Path
+
 import numpy as np
 from pyarrow import memory_map
 from pyarrow.ipc import RecordBatchFileReader
+
 
 def make_parser():
 
@@ -16,23 +18,23 @@ def make_parser():
     parser.add_argument(
         "--output_folder",
         type=str,
-        help="Path to output folder.",
+        help="Path to folder to store your output",
     )
     parser.add_argument(
         "--probe_name",
         type=str,
-        help="which probe.",
+        help="which probe, e.g. 'ProbeA'",
     )
     parser.add_argument(
         "--file_index",
         type=str,
-        help="which file.",
+        help="The index of the file you'd like to compute e.g. 13 for the file '..._13.bin'",
     )
     parser.add_argument(
         "--chunk_size",
         type=int,
         default=30_000,
-        help="Time samples per batch. Tune this based on your downstream slice size.",
+        help="Time samples per batch. Default matches the bonsai-onix settings.",
     )
     
     return parser
@@ -54,7 +56,7 @@ def validate_binary_vs_arrow(binary_path_string, output_folder):
     if not arrow_path.is_file():
         raise FileExistsError(f"No arrow file at {arrow_path}")
 
-    # Infor about the recording
+    # Information about the recording
     ephys_dtype = np.uint16
     clock_dtype = np.uint64
     num_channels = 384
@@ -62,23 +64,23 @@ def validate_binary_vs_arrow(binary_path_string, output_folder):
 
     # First, validate the arrow and binary files directly
 
-    # load the binary file
+    # load the binary file - code from spikeinterface
     total_file_size = os.path.getsize(binary_path)
     bytes_per_sample = np.dtype(ephys_dtype).itemsize
     bytes_per_time_step = num_channels * bytes_per_sample
     ephys_time_samples = total_file_size // bytes_per_time_step
-
     shape = (ephys_time_samples, num_channels)
-
     raw_amplifier_data = np.memmap(binary_path, dtype=ephys_dtype, mode="r", shape=shape)
-    raw_hubclock_data = np.memmap(hubclock_path, dtype=clock_dtype, mode="r")
-    raw_clock_data = np.memmap(clock_path, dtype=clock_dtype, mode="r")
+
+    binary_hubclock_data = np.memmap(hubclock_path, dtype=clock_dtype, mode="r")
+    binary_clock_data = np.memmap(clock_path, dtype=clock_dtype, mode="r")
 
     # load the arrow file
     source = memory_map(str(arrow_path), "r")
     reader = RecordBatchFileReader(source)
     num_batches = reader.num_record_batches
 
+    # It costs too much memory to check everything at once, so we check consistency in 1s batches
     initial_batch_index = 0
     for batch_index in range(num_batches):
 
@@ -89,22 +91,15 @@ def validate_binary_vs_arrow(binary_path_string, output_folder):
 
         hubclock_from_arrow = arrow_samples['HubClock'].values
         clock_from_arrow = arrow_samples['Clock'].values
-        ephys_from_arraow = arrow_samples.values[:,:-2]
+        ephys_from_arrow = arrow_samples.values[:,:-2]
 
-        ephys_matches = np.all(ephys_from_arraow == raw_amplifier_data[initial_batch_index:initial_batch_index+batch_size,:])
+        # this is the most important check - is the ephys data the same
+        ephys_matches = np.all(ephys_from_arrow == raw_amplifier_data[initial_batch_index:initial_batch_index+batch_size,:])
+        if not ephys_matches:
+            raise ValueError('Ephys does not match')
 
-        sliced_binary_clock_data = raw_clock_data[initial_batch_index:initial_batch_index+batch_size]
-        if len(clock_from_arrow) == len(sliced_binary_clock_data):
-            clock_matces = np.all(clock_from_arrow == sliced_binary_clock_data)
-        else:
-            clock_from_arrow_ints = np.astype(clock_from_arrow[0:len(sliced_binary_clock_data)], np.uint64)
-            clock_matces = np.all(clock_from_arrow_ints == sliced_binary_clock_data)
-            padded_data = clock_from_arrow[len(sliced_binary_clock_data):]
-            padded_data_are_nans = np.all(np.isnan(padded_data))
-            if not padded_data_are_nans:
-                raise ValueError('Some padding clock data that we expect to be nans are not nans')
-
-        sliced_binary_hubclock_data = raw_hubclock_data[initial_batch_index:initial_batch_index+batch_size]
+        # check hubclock data
+        sliced_binary_hubclock_data = binary_hubclock_data[initial_batch_index:initial_batch_index+batch_size]
         if len(hubclock_from_arrow) == len(sliced_binary_hubclock_data):
             hubclock_matches = np.all(hubclock_from_arrow == sliced_binary_hubclock_data)
         else:
@@ -112,14 +107,26 @@ def validate_binary_vs_arrow(binary_path_string, output_folder):
             padded_data = hubclock_from_arrow[len(sliced_binary_hubclock_data):]
             padded_data_are_nans = np.all(np.isnan(padded_data))
             if not padded_data_are_nans:
-                raise ValueError('Some padding clock data that we expect to be nans are not nans')
-
-        if not ephys_matches:
-            raise ValueError('Ephys does not match')
-        if not clock_matces:
-            raise ValueError('Clock does not match')
+                raise ValueError('Some padding in HubClock data that we expect to be nans are not nans')
+        
         if not hubclock_matches:
             raise ValueError('HubClock does not match')
+
+        # check clock data
+        sliced_binary_clock_data = binary_clock_data[initial_batch_index:initial_batch_index+batch_size]
+        if len(clock_from_arrow) == len(sliced_binary_clock_data):
+            clock_matces = np.all(clock_from_arrow == sliced_binary_clock_data)
+        else:
+            clock_from_arrow_ints = np.astype(clock_from_arrow[0:len(sliced_binary_clock_data)], np.uint64)
+            clock_matces = np.all(clock_from_arrow_ints == sliced_binary_clock_data)
+            
+            padded_data = clock_from_arrow[len(sliced_binary_clock_data):]
+            padded_data_are_nans = np.all(np.isnan(padded_data))
+            if not padded_data_are_nans:
+                raise ValueError('Some padding in Clock data that we expect to be nans are not nans')
+        
+        if not clock_matces:
+            raise ValueError('Clock does not match')
 
         initial_batch_index += batch_size
 
@@ -132,7 +139,6 @@ def validate_binary_vs_arrow(binary_path_string, output_folder):
     rec_arrow = read_bonsai_onix_arrow(str(arrow_path), sampling_frequency=sampling_frequency)
     rec_binary = read_binary(binary_path, sampling_frequency=sampling_frequency, dtype=ephys_dtype, num_channels=num_channels)
     num_samples = rec_binary.get_num_samples()
-
 
     initial_sample_index = 0
     final_sample_index = 0

@@ -1,5 +1,5 @@
 [project]
-name = "aeon_compress_binary_files"
+name = "aeon_binary_to_arrow"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
